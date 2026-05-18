@@ -6,6 +6,15 @@
   const projectMoveOverlayClass = "codex-project-move-overlay";
   const actionButtonClass = "codex-session-action-button";
   const actionGroupClass = "codex-session-actions";
+  const timelineClass = "codex-conversation-timeline";
+  const timelineTrackClass = "codex-conversation-timeline-track";
+  const timelineMarkerClass = "codex-conversation-timeline-marker";
+  const timelineTooltipClass = "codex-conversation-timeline-tooltip";
+  const timelineTargetClass = "codex-conversation-timeline-target";
+  const timelineQuestionLimit = 40;
+  const timelineMinTopPercent = 2;
+  const timelineMaxTopPercent = 98;
+  const timelineMaxMarkerGapPercent = 3.5;
   const projectMoveProjectionKey = "codexProjectMoveProjection";
   const legacyProjectMoveOverridesKey = "codexProjectMoveOverrides";
   const projectMoveProjectionTtlMs = 24 * 60 * 60 * 1000;
@@ -14,15 +23,17 @@
   const chatsSortRefreshIntervalMs = 1500;
   const chatsSortDbRefreshIntervalMs = 5000;
   const styleId = "codex-delete-style";
-  const codexDeleteStyleVersion = "6";
+  const codexDeleteStyleVersion = "8";
   const codexPlusMenuId = "codex-plus-menu";
-  const codexDeleteVersion = "6";
+  const codexPlusMenuFloatingClass = "codex-plus-menu-floating";
+  const codexDeleteVersion = "7";
   const codexExportVersion = "1";
   const codexProjectMoveVersion = "1";
   const codexActionGroupVersion = "2";
   const codexArchiveRowActionsVersion = "1";
   const codexArchiveDeleteAllVersion = "2";
-  const codexPlusVersion = "1.0.5";
+  const codexConversationTimelineVersion = "2";
+  const codexPlusVersion = "1.0.7";
   const codexPlusSettingsKey = "codexPlusSettings";
   window.__codexProjectMoveRuntimeId = (window.__codexProjectMoveRuntimeId || 0) + 1;
   const codexProjectMoveRuntimeId = window.__codexProjectMoveRuntimeId;
@@ -30,6 +41,7 @@
   clearTimeout(window.__codexProjectMoveChatsSortTimer);
   window.__codexProjectMoveProjectionTimer = null;
   window.__codexProjectMoveChatsSortTimer = null;
+  window.__codexConversationTimelineNodeCounter = window.__codexConversationTimelineNodeCounter || 0;
   const selectors = {
     sidebarThread: "[data-app-action-sidebar-thread-id]",
     threadTitle: "[data-thread-title]",
@@ -200,21 +212,26 @@
         background: #ffffff;
         color: #111827;
         font: 13px system-ui, sans-serif;
+        cursor: pointer;
       }
       .codex-delete-confirm-actions [data-codex-delete-confirm="true"] {
         border-color: #ef4444;
         background: #dc2626;
+        color: #ffffff;
       }
-      #${codexPlusMenuId}.codex-plus-menu-floating {
+      #${codexPlusMenuId}.${codexPlusMenuFloatingClass} {
         position: fixed;
-        top: 0;
-        right: 140px;
+        top: var(--codex-plus-menu-top, 0);
+        right: var(--codex-plus-menu-right, 140px);
         left: auto;
         z-index: 2147483645;
-        height: 30px;
+        height: var(--codex-plus-menu-height, 30px);
         color: #d1d5db;
         font: 13px system-ui, sans-serif;
         text-align: right;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         pointer-events: auto;
         -webkit-app-region: no-drag;
       }
@@ -227,11 +244,16 @@
         -webkit-app-region: no-drag;
       }
       .codex-plus-trigger {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
         border: 0;
         background: transparent;
         color: inherit;
         font: inherit;
         height: 100%;
+        line-height: 1;
         padding: 0 8px;
         cursor: pointer;
         pointer-events: auto;
@@ -245,21 +267,32 @@
         align-items: center;
         justify-content: center;
         background: rgba(0,0,0,.45);
+        pointer-events: auto;
+        -webkit-app-region: no-drag;
       }
       .codex-plus-modal-content {
         width: min(520px, calc(100vw - 48px));
+        max-height: min(680px, calc(100vh - 40px));
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
         border: 1px solid rgba(255,255,255,.12);
         border-radius: 18px;
         background: #2b2b2b;
         color: #f3f4f6;
         font: 14px system-ui, sans-serif;
         box-shadow: 0 24px 80px rgba(0,0,0,.45);
+        pointer-events: auto;
+        -webkit-app-region: no-drag;
       }
+      .codex-plus-modal-content[data-codex-plus-active-tab="support"] { width: min(820px, calc(100vw - 48px)); }
       .codex-plus-modal-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 18px 20px 10px;
+        padding: 16px 20px 8px;
+        flex: 0 0 auto;
+        -webkit-app-region: no-drag;
       }
       .codex-plus-modal-title { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 650; }
       .codex-plus-backend-indicator { width: 9px; height: 9px; border-radius: 999px; background: #a1a1aa; display: inline-block; }
@@ -271,20 +304,40 @@
         background: transparent;
         color: #d1d5db;
         font-size: 20px;
-        cursor: default;
+        cursor: pointer;
+        pointer-events: auto;
+        -webkit-app-region: no-drag;
       }
-      .codex-plus-modal-body { padding: 8px 20px 20px; }
+      .codex-plus-modal-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+        padding: 4px 20px 16px;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,.28) transparent;
+      }
+      .codex-plus-modal-body::-webkit-scrollbar { width: 10px; }
+      .codex-plus-modal-body::-webkit-scrollbar-track { background: transparent; }
+      .codex-plus-modal-body::-webkit-scrollbar-thumb {
+        border: 2px solid transparent;
+        border-radius: 999px;
+        background: rgba(255,255,255,.28);
+        background-clip: padding-box;
+      }
+      .codex-plus-modal-body::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.38); background-clip: padding-box; }
       .codex-plus-row {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: space-between;
-        gap: 16px;
-        padding: 12px 0;
+        gap: 12px;
+        padding: 10px 0;
         border-top: 1px solid rgba(255,255,255,.1);
       }
       .codex-plus-row:first-child { border-top: 0; }
-      .codex-plus-row-title { font-weight: 550; }
-      .codex-plus-row-description { margin-top: 3px; color: #a1a1aa; font-size: 12px; }
+      .codex-plus-row-title { font-weight: 550; line-height: 1.35; }
+      .codex-plus-row-description { margin-top: 2px; color: #a1a1aa; font-size: 12px; line-height: 1.4; }
       .codex-plus-toggle {
         width: 42px;
         height: 24px;
@@ -301,20 +354,29 @@
         background: white;
         transition: transform .12s ease;
       }
+      .codex-plus-toggle,
+      .codex-plus-action-button,
+      .codex-plus-issue-button,
+      .codex-plus-backend-status {
+        flex-shrink: 0;
+        align-self: center;
+      }
       .codex-plus-toggle[data-enabled="true"] { background: #10a37f; }
       .codex-plus-toggle[data-enabled="true"] span { transform: translateX(18px); }
       .codex-plus-about { color: #a1a1aa; line-height: 1.5; }
-      .codex-plus-tabs { display: flex; gap: 8px; padding: 0 20px 8px; }
+      .codex-plus-tabs { display: flex; gap: 8px; padding: 0 20px 6px; flex: 0 0 auto; }
       .codex-plus-tab-button { border: 1px solid rgba(255,255,255,.14); border-radius: 999px; background: transparent; color: #d1d5db; font: 12px system-ui, sans-serif; padding: 5px 10px; }
       .codex-plus-tab-button[data-active="true"] { background: #10a37f; color: white; border-color: #10a37f; }
       .codex-plus-panel[hidden] { display: none; }
-      .codex-plus-action-button { border: 1px solid rgba(255,255,255,.18); border-radius: 7px; background: #3f3f46; color: #f3f4f6; font: 12px system-ui, sans-serif; padding: 6px 8px; }
+      .codex-plus-action-button,
+      .codex-plus-issue-button { border: 1px solid rgba(255,255,255,.18); border-radius: 7px; background: #3f3f46; color: #f3f4f6; font: 12px system-ui, sans-serif; padding: 6px 8px; }
       .codex-plus-backend-status { display: grid; gap: 4px; min-width: 132px; justify-items: end; }
       .codex-plus-backend-label { color: #a1a1aa; font-size: 12px; }
       .codex-plus-backend-label[data-status="ok"] { color: #34d399; }
       .codex-plus-backend-label[data-status="failed"] { color: #f87171; }
       .codex-plus-backend-repair { border: 1px solid rgba(255,255,255,.18); border-radius: 7px; background: #3f3f46; color: #f3f4f6; font: 12px system-ui, sans-serif; padding: 6px 8px; }
       .codex-plus-backend-repair[hidden] { display: none; }
+      .codex-plus-model-compat-warning { margin-top: 6px; color: #fbbf24; font-size: 12px; line-height: 1.45; }
       .codex-plus-user-script-warning { margin-top: 4px; color: #fbbf24; font-size: 12px; }
       .codex-plus-user-script-dirs { margin-top: 6px; color: #a1a1aa; font-size: 11px; line-height: 1.4; word-break: break-all; }
       .codex-plus-user-script-list { margin-top: 8px; display: grid; gap: 6px; }
@@ -324,12 +386,103 @@
       .codex-plus-user-script-error { margin-top: 2px; color: #f87171; font-size: 11px; word-break: break-all; }
       .codex-plus-user-script-actions { display: grid; justify-items: end; gap: 8px; min-width: 120px; }
       .codex-plus-user-script-reload { border: 1px solid rgba(255,255,255,.18); border-radius: 7px; background: #3f3f46; color: #f3f4f6; font: 12px system-ui, sans-serif; padding: 6px 8px; }
+      .codex-plus-sponsor-text { color: #d1d5db; font-size: 13px; line-height: 1.55; margin: 4px 0 12px; }
+      .codex-plus-ad-section { display: grid; gap: 10px; margin-top: 12px; }
+      .codex-plus-ad-section:first-of-type { margin-top: 0; }
+      .codex-plus-ad-section-title { color: #f8fafc; font-size: 15px; margin: 0; }
+      .codex-plus-ad-list { display: grid; gap: 14px; }
+      .codex-plus-ad-card { border: 1px solid rgba(96,165,250,.26); border-radius: 16px; background: linear-gradient(135deg, rgba(37,99,235,.18), rgba(255,255,255,.05)); box-shadow: 0 14px 36px rgba(0,0,0,.22); }
+      .codex-plus-ad-content { padding: 14px; }
+      .codex-plus-ad-title { margin: 0; color: #f8fafc; font-size: 17px; line-height: 1.35; }
+      .codex-plus-ad-description { margin: 6px 0 10px; color: #dbeafe; font-size: 13px; line-height: 1.55; }
+      .codex-plus-ad-highlights { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+      .codex-plus-ad-highlights span { border: 1px solid rgba(255,255,255,.14); border-radius: 999px; background: rgba(255,255,255,.08); color: #f3f4f6; font-size: 12px; padding: 4px 8px; }
+      .codex-plus-ad-link { display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; background: #2563eb; color: #ffffff; font-size: 13px; font-weight: 650; text-decoration: none; padding: 8px 12px; }
+      .codex-plus-ad-empty { border: 1px dashed rgba(255,255,255,.16); border-radius: 12px; color: #9ca3af; font-size: 13px; padding: 12px; text-align: center; }
+      .codex-plus-sponsor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .codex-plus-sponsor-card { border: 1px solid rgba(255,255,255,.1); border-radius: 12px; padding: 10px; background: rgba(255,255,255,.04); text-align: center; }
+      .codex-plus-sponsor-card-title { color: #f3f4f6; font-size: 13px; margin-bottom: 8px; }
+      .codex-plus-sponsor-qr { display: block; width: 100%; max-width: 340px; border-radius: 8px; margin: 0 auto; background: white; }
+      .${timelineClass} {
+        position: fixed;
+        top: calc(72px + 12px);
+        right: 12px;
+        bottom: calc(28px + 12px);
+        width: 24px;
+        z-index: 2147482500;
+        pointer-events: none;
+      }
+      .${timelineTrackClass} {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        width: 2px;
+        transform: translateX(-50%);
+        border-radius: 999px;
+        background: rgba(209, 213, 219, .55);
+      }
+      .${timelineMarkerClass} {
+        position: absolute;
+        left: 50%;
+        width: 12px;
+        height: 12px;
+        border: 0;
+        border-radius: 999px;
+        transform: translate(-50%, -50%);
+        background: #d1d5db;
+        cursor: pointer;
+        pointer-events: auto;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, .92);
+      }
+      .${timelineMarkerClass}:hover,
+      .${timelineMarkerClass}:focus-visible,
+      .${timelineMarkerClass}.codex-conversation-timeline-marker-active {
+        background: #8b8b8b;
+        outline: none;
+      }
+      .${timelineTooltipClass} {
+        position: absolute;
+        right: 20px;
+        top: 50%;
+        display: block;
+        box-sizing: border-box;
+        width: max-content;
+        max-width: min(320px, calc(100vw - 72px));
+        transform: translateY(-50%);
+        border-radius: 8px;
+        background: rgba(80, 80, 80, .92);
+        color: #ffffff;
+        font: 600 13px system-ui, sans-serif;
+        line-height: 18px;
+        padding: 10px 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      .${timelineMarkerClass}:hover .${timelineTooltipClass},
+      .${timelineMarkerClass}:focus-visible .${timelineTooltipClass} {
+        opacity: 1;
+        visibility: visible;
+        z-index: 2147482501;
+      }
+      .${timelineTargetClass} {
+        animation: codex-conversation-timeline-pulse 1.2s ease-out;
+      }
+      @keyframes codex-conversation-timeline-pulse {
+        0% { box-shadow: 0 0 0 0 rgba(16, 163, 127, .35); }
+        100% { box-shadow: 0 0 0 14px rgba(16, 163, 127, 0); }
+      }
     `;
     document.documentElement.appendChild(style);
   }
 
   function defaultCodexPlusSettings() {
-    return { pluginEntryUnlock: true, forcePluginInstall: true, sessionDelete: true, markdownExport: true, projectMove: true, nativeMenuPlacement: true };
+    return { pluginEntryUnlock: true, forcePluginInstall: true, sessionDelete: true, markdownExport: true, projectMove: true, conversationTimeline: true, nativeMenuPlacement: true, modelWhitelistUnlock: true };
   }
 
   function codexPlusSettings() {
@@ -351,6 +504,37 @@
     document.querySelectorAll(".codex-plus-toggle[data-codex-plus-setting]").forEach((button) => {
       const key = button.getAttribute("data-codex-plus-setting");
       button.dataset.enabled = String(!!codexPlusSettings()[key]);
+    });
+    renderCodexModelCompatibilityWarning();
+  }
+
+  let codexPlusBackendSettings = { providerSyncEnabled: false };
+
+  async function loadBackendSettings() {
+    try {
+      const settings = await postJson("/settings/get", {});
+      codexPlusBackendSettings = { ...codexPlusBackendSettings, ...settings };
+      refreshCodexPlusBackendToggles();
+    } catch (_) {
+      refreshCodexPlusBackendToggles();
+    }
+  }
+
+  async function setBackendSetting(key, value) {
+    codexPlusBackendSettings = { ...codexPlusBackendSettings, [key]: value };
+    refreshCodexPlusBackendToggles();
+    try {
+      const settings = await postJson("/settings/set", { [key]: value });
+      codexPlusBackendSettings = { ...codexPlusBackendSettings, ...settings };
+    } finally {
+      refreshCodexPlusBackendToggles();
+    }
+  }
+
+  function refreshCodexPlusBackendToggles() {
+    document.querySelectorAll(".codex-plus-toggle[data-codex-backend-setting]").forEach((button) => {
+      const key = button.getAttribute("data-codex-backend-setting");
+      button.dataset.enabled = String(!!codexPlusBackendSettings[key]);
     });
   }
 
@@ -436,7 +620,79 @@
     }
   }
 
+  const codexPlusAdsUrl = "/ads";
+  let codexPlusAds = [];
+  let codexPlusAdsLoaded = false;
+
+  function isCodexPlusAdExpired(ad) {
+    if (!ad.expires_at) return false;
+    const expiresAt = Date.parse(ad.expires_at);
+    return Number.isFinite(expiresAt) && expiresAt < Date.now();
+  }
+
+  function normalizeCodexPlusAds(payload) {
+    if (!payload || !Array.isArray(payload.ads)) return [];
+    return payload.ads.filter((ad) => {
+      return ad && ["sponsor", "normal"].includes(ad.type) && ad.title && ad.description && ad.url && !isCodexPlusAdExpired(ad);
+    }).map((ad) => ({
+      id: String(ad.id || ad.title),
+      type: ad.type,
+      title: String(ad.title),
+      description: String(ad.description),
+      url: String(ad.url),
+      expires_at: ad.expires_at ? String(ad.expires_at) : "",
+      highlights: Array.isArray(ad.highlights) ? ad.highlights.map((item) => String(item)).filter(Boolean) : [],
+    }));
+  }
+
+  function renderCodexPlusAdGroup(type, emptyText) {
+    const ads = codexPlusAds.filter((ad) => ad.type === type);
+    if (!ads.length) return `<div class="codex-plus-ad-empty">${escapeHtml(emptyText)}</div>`;
+    return ads.map((ad) => `
+      <article class="codex-plus-ad-card">
+        <div class="codex-plus-ad-content">
+          <h3 class="codex-plus-ad-title">${escapeHtml(ad.title)}</h3>
+          <p class="codex-plus-ad-description">${escapeHtml(ad.description)}</p>
+          <div class="codex-plus-ad-highlights">
+            ${ad.highlights.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
+          </div>
+          <a class="codex-plus-ad-link" href="${escapeHtml(ad.url)}" target="_blank" rel="noreferrer">访问 ${escapeHtml(new URL(ad.url).hostname)}</a>
+        </div>
+      </article>
+    `).join("");
+  }
+
+  function renderCodexPlusAds() {
+    if (!codexPlusAdsLoaded) return `<div class="codex-plus-ad-empty">推荐内容加载中…</div>`;
+    if (!codexPlusAds.length) return `<div class="codex-plus-ad-empty">暂无推荐内容。</div>`;
+    return `
+      <section class="codex-plus-ad-section">
+        <h3 class="codex-plus-ad-section-title">赞助商推荐</h3>
+        <div class="codex-plus-ad-list">${renderCodexPlusAdGroup("sponsor", "暂无赞助商推荐。")}</div>
+      </section>
+      <section class="codex-plus-ad-section">
+        <h3 class="codex-plus-ad-section-title">普通推荐</h3>
+        <div class="codex-plus-ad-list">${renderCodexPlusAdGroup("normal", "暂无普通推荐。")}</div>
+      </section>
+    `;
+  }
+
+  async function fetchCodexPlusAds() {
+    try {
+      codexPlusAds = normalizeCodexPlusAds(await postJson("/ads", {}));
+    } catch (_) {
+      codexPlusAds = [];
+    } finally {
+      codexPlusAdsLoaded = true;
+      const panel = document.querySelector('[data-codex-plus-panel="sponsor"] .codex-plus-ad-remote');
+      if (panel) panel.innerHTML = renderCodexPlusAds();
+    }
+  }
+
   function selectCodexPlusTab(tab) {
+    document.querySelectorAll(".codex-plus-modal-content").forEach((modal) => {
+      modal.dataset.codexPlusActiveTab = tab;
+    });
     document.querySelectorAll("[data-codex-plus-tab]").forEach((button) => {
       button.dataset.active = String(button.getAttribute("data-codex-plus-tab") === tab);
     });
@@ -460,6 +716,8 @@
         <div class="codex-plus-tabs" role="tablist" aria-label="Codex++">
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="home" data-active="true">主页</button>
           <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="userScripts" data-active="false">用户脚本</button>
+          <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="sponsor" data-active="false">推荐内容</button>
+          <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="support" data-active="false">请作者喝咖啡</button>
         </div>
         <div class="codex-plus-modal-body">
           <div class="codex-plus-panel" data-codex-plus-panel="home">
@@ -491,8 +749,20 @@
               <button type="button" class="codex-plus-toggle" data-codex-plus-setting="projectMove"><span></span></button>
             </div>
             <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">对话 Timeline</div><div class="codex-plus-row-description">在对话右侧显示用户提问时间线，悬停查看摘要，点击跳转。</div></div>
+              <button type="button" class="codex-plus-toggle" data-codex-plus-setting="conversationTimeline"><span></span></button>
+            </div>
+            <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">Provider 同步</div><div class="codex-plus-row-description">切换供应商（model_provider）时不丢任何历史会话，避免历史对话因为供应商切换而消失。</div></div>
+              <button type="button" class="codex-plus-toggle" data-codex-backend-setting="providerSyncEnabled"><span></span></button>
+            </div>
+            <div class="codex-plus-row">
               <div><div class="codex-plus-row-title">原生菜单栏位置</div><div class="codex-plus-row-description">把 Codex++ 菜单插入顶部原生菜单栏；默认关闭以避免页面重渲染冲突。</div></div>
               <button type="button" class="codex-plus-toggle" data-codex-plus-setting="nativeMenuPlacement"><span></span></button>
+            </div>
+            <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">模型白名单解锁</div><div class="codex-plus-row-description">从环境变量和 Codex config.toml 中的中转站 /v1/models 拉取模型，并补进模型选择列表。</div></div>
+              <button type="button" class="codex-plus-toggle" data-codex-plus-setting="modelWhitelistUnlock"><span></span></button>
             </div>
             <div class="codex-plus-row">
               <div><div class="codex-plus-row-title">打开 DevTools</div><div class="codex-plus-row-description">打开当前 Codex 页面开发者工具，方便查看用户脚本报错。</div></div>
@@ -521,55 +791,93 @@
               </div>
             </div>
           </div>
+          <div class="codex-plus-panel" data-codex-plus-panel="sponsor" hidden>
+            <div class="codex-plus-sponsor-text">推荐内容分为赞助商推荐和普通推荐。赞助商推荐来自支持 Codex++ 继续维护的合作方；普通推荐用于展示适合 Codex 用户的服务与信息。</div>
+            <div class="codex-plus-ad-remote">
+              ${renderCodexPlusAds()}
+            </div>
+          </div>
+          <div class="codex-plus-panel" data-codex-plus-panel="support" hidden>
+            <div class="codex-plus-sponsor-text">如果 Codex++ 帮到了你，可以请我喝杯咖啡，或者随手赞赏支持一下继续维护。</div>
+            <div class="codex-plus-sponsor-grid">
+              <div class="codex-plus-sponsor-card">
+                <div class="codex-plus-sponsor-card-title">支付宝</div>
+                <img class="codex-plus-sponsor-qr" src="${window.__CODEX_PLUS_SPONSOR_IMAGES__?.alipay || `${helperBase}/assets/sponsor-alipay.jpg`}" alt="支付宝赞赏码">
+              </div>
+              <div class="codex-plus-sponsor-card">
+                <div class="codex-plus-sponsor-card-title">微信</div>
+                <img class="codex-plus-sponsor-qr" src="${window.__CODEX_PLUS_SPONSOR_IMAGES__?.wechat || `${helperBase}/assets/sponsor-wechat.jpg`}" alt="微信赞赏码">
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     `;
+    const closeButton = overlay.querySelector(".codex-plus-modal-close");
+    closeButton?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      overlay.remove();
+    }, true);
     overlay.addEventListener("click", (event) => {
-      if (event.target === overlay || event.target.closest(".codex-plus-modal-close")) {
+      const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+      if (event.target === overlay || target?.closest(".codex-plus-modal-close")) {
         overlay.remove();
         return;
       }
-      const tabButton = event.target.closest("[data-codex-plus-tab]");
+      const tabButton = target?.closest("[data-codex-plus-tab]");
       if (tabButton) {
         selectCodexPlusTab(tabButton.getAttribute("data-codex-plus-tab"));
         return;
       }
-      if (event.target.closest("[data-codex-open-devtools]")) {
+      if (target?.closest("[data-codex-open-devtools]")) {
         postJson("/devtools/open", {});
         return;
       }
-      if (event.target.closest("[data-codex-backend-repair]")) {
+      if (target?.closest("[data-codex-backend-repair]")) {
         repairBackend();
         return;
       }
-      const issueButton = event.target.closest("[data-codex-plus-issue]");
+      const issueButton = target?.closest("[data-codex-plus-issue]");
       if (issueButton) {
         const issueUrl = "https://github.com/BigPizzaV3/CodexPlusPlus/issues";
         window.open(issueUrl, "_blank");
         return;
       }
-      const userScriptsEnabled = event.target.closest("[data-codex-user-scripts-enabled]");
+      const userScriptsEnabled = target?.closest("[data-codex-user-scripts-enabled]");
       if (userScriptsEnabled) {
         loadUserScripts("/user-scripts/set-enabled", { enabled: userScriptsEnabled.dataset.enabled !== "true" });
         return;
       }
-      const userScriptToggle = event.target.closest("[data-codex-user-script-key]");
+      const userScriptToggle = target?.closest("[data-codex-user-script-key]");
       if (userScriptToggle) {
         loadUserScripts("/user-scripts/set-script-enabled", { key: userScriptToggle.getAttribute("data-codex-user-script-key"), enabled: userScriptToggle.dataset.enabled !== "true" });
         return;
       }
-      if (event.target.closest("[data-codex-user-scripts-reload]")) {
+      if (target?.closest("[data-codex-user-scripts-reload]")) {
         loadUserScripts("/user-scripts/reload", {});
         return;
       }
-      const toggle = event.target.closest("[data-codex-plus-setting]");
-      if (!toggle) return;
-      const key = toggle.getAttribute("data-codex-plus-setting");
-      setCodexPlusSetting(key, !codexPlusSettings()[key]);
+      const toggle = target?.closest("[data-codex-plus-setting]");
+      if (toggle) {
+        const key = toggle.getAttribute("data-codex-plus-setting");
+        setCodexPlusSetting(key, !codexPlusSettings()[key]);
+        return;
+      }
+      const backendToggle = target?.closest("[data-codex-backend-setting]");
+      if (backendToggle) {
+        const key = backendToggle.getAttribute("data-codex-backend-setting");
+        setBackendSetting(key, !codexPlusBackendSettings[key]);
+        return;
+      }
     }, true);
     document.body.appendChild(overlay);
+    if (!codexPlusAdsLoaded) fetchCodexPlusAds();
+    selectCodexPlusTab("home");
     renderCodexPlusMenu();
+    refreshCodexPlusBackendToggles();
     renderBackendStatus();
+    loadBackendSettings();
     loadUserScripts();
   }
 
@@ -580,6 +888,16 @@
     if (!menuBar) return null;
     const buttons = Array.from(menuBar.querySelectorAll("button")).filter((button) => !button.closest(`#${codexPlusMenuId}`));
     return { parent: menuBar, before: buttons[buttons.length - 1]?.nextSibling || null, nativeButtonClass: buttons[buttons.length - 1]?.className || "" };
+  }
+
+  function pageHasCodexAppChrome() {
+    return !!(
+      document.querySelector(selectors.appHeader) ||
+      document.querySelector("header") ||
+      document.querySelector(selectors.sidebarThread) ||
+      document.querySelector('[data-app-action-sidebar-section-heading="Chats"], [data-app-action-sidebar-section-heading="Projects"]') ||
+      document.querySelector(selectors.pluginNavButton)
+    );
   }
 
   function removeDuplicateCodexPlusMenus(keep) {
@@ -605,11 +923,72 @@
     }, true);
   }
 
+  function numericCssValue(value) {
+    const parsed = Number.parseFloat(value || "");
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function setCssPropIfChanged(menu, prop, value) {
+    if (menu.style.getPropertyValue(prop) !== value) {
+      menu.style.setProperty(prop, value);
+    }
+  }
+
+  function headerTitleRegion(header) {
+    const candidates = Array.from(header?.querySelectorAll?.('[data-state], [class*="truncate"], [class*="text-base"]') || []);
+    return candidates.find((node) => {
+      if (!node?.querySelector?.('[data-state], button')) return false;
+      if (!node.textContent?.trim()) return false;
+      return node.closest?.(".draggable") || node.closest?.('[class*="grid-cols-[minmax(0,1fr)]"]');
+    }) || null;
+  }
+
+  function isHeaderToolbarButton(button, header, rect) {
+    if (!button || button.closest?.(`#${codexPlusMenuId}`)) return false;
+    if (!(rect.width > 0 && rect.height > 0 && rect.left > window.innerWidth / 2)) return false;
+    const buttonCluster = button.closest(".ms-auto.flex.shrink-0.items-center");
+    if (buttonCluster && header?.contains(buttonCluster)) return true;
+    const titleRegion = headerTitleRegion(header);
+    if (titleRegion?.contains?.(button)) return false;
+    return !!button.closest?.('[class*="ms-auto"][class*="shrink-0"][class*="items-center"]');
+  }
+
+  function updateFloatingCodexPlusMenuPosition(menu) {
+    if (!menu?.classList?.contains(codexPlusMenuFloatingClass)) return;
+    const header = document.querySelector(selectors.appHeader) || document.querySelector("header");
+    if (!header) return;
+    const toolbarButtons = Array.from(header.querySelectorAll("button"))
+      .map((button) => ({ button, rect: button.getBoundingClientRect() }))
+      .filter(({ button, rect }) => isHeaderToolbarButton(button, header, rect))
+      .sort((left, right) => left.rect.left - right.rect.left);
+    const anchor = toolbarButtons[0];
+    if (anchor) {
+      const measuredGap = toolbarButtons[1] ? toolbarButtons[1].rect.left - toolbarButtons[0].rect.right : 0;
+      const styles = anchor.button.parentElement ? getComputedStyle(anchor.button.parentElement) : null;
+      const gap = Math.max(numericCssValue(styles?.columnGap || styles?.gap), measuredGap, 0);
+      setCssPropIfChanged(menu, "--codex-plus-menu-top", `${anchor.rect.top}px`);
+      setCssPropIfChanged(menu, "--codex-plus-menu-height", `${anchor.rect.height}px`);
+      setCssPropIfChanged(menu, "--codex-plus-menu-right", `${Math.max(0, window.innerWidth - anchor.rect.left + gap)}px`);
+      return;
+    }
+
+    const headerRect = header.getBoundingClientRect();
+    if (headerRect.height) {
+      setCssPropIfChanged(menu, "--codex-plus-menu-top", `${headerRect.top}px`);
+      setCssPropIfChanged(menu, "--codex-plus-menu-height", `${headerRect.height}px`);
+    }
+    menu.style.removeProperty("--codex-plus-menu-right");
+  }
+
   function installCodexPlusMenu() {
     const existing = document.getElementById(codexPlusMenuId);
     removeDuplicateCodexPlusMenus(existing);
+    if (!pageHasCodexAppChrome()) {
+      existing?.remove();
+      return;
+    }
     let insertionPoint = findNativeMenuInsertionPoint();
-    if (existing && existing.dataset.codexPlusMenuVersion !== "5") {
+    if (existing && existing.dataset.codexPlusMenuVersion !== "6") {
       existing.remove();
       insertionPoint = findNativeMenuInsertionPoint();
     } else if (existing && insertionPoint && existing.parentElement === insertionPoint.parent) {
@@ -620,7 +999,7 @@
     const menu = document.createElement("div");
     menu.id = codexPlusMenuId;
     menu.dataset.codexPlusMenu = "true";
-    menu.dataset.codexPlusMenuVersion = "5";
+    menu.dataset.codexPlusMenuVersion = "6";
     const trigger = document.createElement("button");
     trigger.type = "button";
     trigger.textContent = `Codex++ ${codexPlusVersion}`;
@@ -637,8 +1016,9 @@
       const safeBefore = insertionPoint.before?.parentElement === insertionPoint.parent ? insertionPoint.before : null;
       insertionPoint.parent.insertBefore(menu, safeBefore);
     } else {
-      menu.className = "codex-plus-menu-floating";
+      menu.className = codexPlusMenuFloatingClass;
       document.documentElement.appendChild(menu);
+      updateFloatingCodexPlusMenuPosition(menu);
     }
     removeDuplicateCodexPlusMenus(menu);
   }
@@ -815,6 +1195,313 @@
       return { status: "failed", message: "桥接不可用，请重启启动器" };
     }
     return await window.__codexSessionDeleteBridge(path, payload);
+  }
+
+  let codexModelCatalog = { status: "loading", model: "", default_model: "", model_provider: "", provider_name: "", models: [], sources: [], responses_api: { status: "unknown", message: "" } };
+  let codexModelCatalogLoadedAt = 0;
+  let codexModelCatalogPromise = null;
+  const codexPlusModelListRequestIds = new Set();
+
+  function codexPlusModelUnlockEnabled() {
+    return !!codexPlusSettings().modelWhitelistUnlock;
+  }
+
+  function codexPlusModelNames() {
+    return uniqueValues([
+      codexModelCatalog.default_model,
+      codexModelCatalog.model,
+      ...(Array.isArray(codexModelCatalog.models) ? codexModelCatalog.models : []),
+    ]);
+  }
+
+  function codexResponsesApiStatus() {
+    const status = codexModelCatalog.responses_api;
+    return status && typeof status === "object" ? status : { status: "unknown", message: "" };
+  }
+
+  function codexModelCompatibilityWarningText() {
+    if (!codexPlusModelUnlockEnabled()) return "";
+    const responsesApi = codexResponsesApiStatus();
+    if (responsesApi.status !== "unsupported") return "";
+    const provider = codexModelCatalog.provider_name || codexModelCatalog.model_provider || "当前模型供应商";
+    const detail = responsesApi.message ? `：${responsesApi.message}` : "";
+    return `${provider} 不支持 Codex 使用的 /v1/responses 接口，模型可能能显示，但发起对话会失败。请换支持 Responses API 的中转，或使用兼容转换代理${detail}`;
+  }
+
+  function modelCompatibilityWarningElement() {
+    const toggle = document.querySelector('[data-codex-plus-setting="modelWhitelistUnlock"]');
+    const row = toggle?.closest?.(".codex-plus-row");
+    if (!row) return null;
+    let warning = row.querySelector("[data-codex-model-compat-warning]");
+    if (warning) return warning;
+    warning = document.createElement("div");
+    warning.className = "codex-plus-model-compat-warning";
+    warning.dataset.codexModelCompatWarning = "true";
+    const description = row.querySelector(".codex-plus-row-description");
+    (description?.parentElement || row).appendChild(warning);
+    return warning;
+  }
+
+  function renderCodexModelCompatibilityWarning() {
+    const text = codexModelCompatibilityWarningText();
+    document.querySelectorAll("[data-codex-model-compat-warning]").forEach((warning) => {
+      warning.hidden = !text;
+      warning.textContent = text;
+    });
+    if (!text) return;
+    const warning = modelCompatibilityWarningElement();
+    if (!warning) return;
+    warning.hidden = false;
+    warning.textContent = text;
+  }
+
+  function maybeShowCodexModelCompatibilityWarning() {
+    const text = codexModelCompatibilityWarningText();
+    if (!text) return;
+    const responsesApi = codexResponsesApiStatus();
+    const key = `${codexModelCatalog.model_provider || ""}:${responsesApi.endpoint || ""}:${responsesApi.message || ""}`;
+    if (window.__codexPlusResponsesApiWarningKey === key) return;
+    window.__codexPlusResponsesApiWarningKey = key;
+    showToast(text, null);
+  }
+
+  async function loadCodexModelCatalog(force = false) {
+    if (!force && codexModelCatalogPromise) return codexModelCatalogPromise;
+    if (!force && codexModelCatalogLoadedAt && Date.now() - codexModelCatalogLoadedAt < 10000) return codexModelCatalog;
+    codexModelCatalogPromise = postJson("/codex-model-catalog", {})
+      .then((result) => {
+        codexModelCatalog = result && typeof result === "object" ? result : { status: "failed", model: "", default_model: "", model_provider: "", provider_name: "", models: [], sources: [], responses_api: { status: "unknown", message: "" } };
+        codexModelCatalogLoadedAt = Date.now();
+        renderCodexPlusMenu();
+        maybeShowCodexModelCompatibilityWarning();
+        patchCodexModelWhitelist();
+        return codexModelCatalog;
+      })
+      .catch((error) => {
+        codexModelCatalog = { status: "failed", message: String(error?.message || error), model: "", default_model: "", model_provider: "", provider_name: "", models: [], sources: [], responses_api: { status: "unknown", message: "" } };
+        codexModelCatalogLoadedAt = Date.now();
+        return codexModelCatalog;
+      })
+      .finally(() => {
+        codexModelCatalogPromise = null;
+      });
+    return codexModelCatalogPromise;
+  }
+
+  function modelReasoningEfforts() {
+    return ["minimal", "low", "medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description: `${reasoningEffort} effort` }));
+  }
+
+  function codexPlusModelDescriptor(modelName) {
+    return {
+      model: modelName,
+      name: modelName,
+      displayName: modelName,
+      description: codexModelCatalog.provider_name || codexModelCatalog.model_provider || "Custom model",
+      hidden: false,
+      isDefault: (codexModelCatalog.default_model || codexModelCatalog.model) === modelName,
+      defaultReasoningEffort: "medium",
+      supportedReasoningEfforts: modelReasoningEfforts(),
+    };
+  }
+
+  function modelArrayLooksPatchable(value, allowEmpty = false) {
+    return Array.isArray(value)
+      && (allowEmpty || value.length > 0)
+      && value.every((item) => item && typeof item === "object" && typeof item.model === "string");
+  }
+
+  function patchModelArray(models, allowEmpty = false) {
+    if (!modelArrayLooksPatchable(models, allowEmpty)) return false;
+    const customModels = codexPlusModelNames();
+    if (!customModels.length) return false;
+    let changed = false;
+    const existing = new Map(models.map((item) => [item.model, item]));
+    models.forEach((item) => {
+      if (customModels.includes(item.model) && item.hidden !== false) {
+        item.hidden = false;
+        changed = true;
+      }
+    });
+    customModels.forEach((modelName) => {
+      if (!existing.has(modelName)) {
+        models.push(codexPlusModelDescriptor(modelName));
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
+  function patchModelContainer(value) {
+    if (!value || typeof value !== "object") return false;
+    let changed = false;
+    if (patchModelArray(value.models, "defaultModel" in value || "availableModels" in value)) changed = true;
+    if (patchModelArray(value.data)) changed = true;
+    if (patchModelArray(value.result)) changed = true;
+    if (patchModelArray(value.pages?.[0]?.data)) changed = true;
+    if (patchModelArray(value.result?.data)) changed = true;
+    if (patchModelArray(value.result?.models)) changed = true;
+    if (patchModelArray(value.message?.result?.data)) changed = true;
+    if (patchModelArray(value.message?.result?.models)) changed = true;
+    const names = codexPlusModelNames();
+    if (value.availableModels instanceof Set) {
+      names.forEach((name) => {
+        if (!value.availableModels.has(name)) {
+          value.availableModels.add(name);
+          changed = true;
+        }
+      });
+    }
+    if (Array.isArray(value.availableModels)) {
+      names.forEach((name) => {
+        if (!value.availableModels.includes(name)) {
+          value.availableModels.push(name);
+          changed = true;
+        }
+      });
+    }
+    if (value.defaultModel == null && names.length > 0) {
+      value.defaultModel = codexPlusModelDescriptor(names[0]);
+      changed = true;
+    } else if (typeof value.defaultModel === "string" && names.includes(value.defaultModel) && value.model == null) {
+      value.model = value.defaultModel;
+      changed = true;
+    }
+    return changed;
+  }
+
+  function patchStatsigModelDynamicConfig(config) {
+    const names = codexPlusModelNames();
+    const value = config?.value;
+    if (!names.length || !value || typeof value !== "object") return config;
+    const availableModels = Array.isArray(value.available_models) ? [...value.available_models] : [];
+    let changed = false;
+    names.forEach((name) => {
+      if (!availableModels.includes(name)) {
+        availableModels.push(name);
+        changed = true;
+      }
+    });
+    const nextValue = {
+      ...value,
+      available_models: availableModels,
+      default_model: names[0] || value.default_model,
+    };
+    if (!changed && nextValue.default_model === value.default_model) return config;
+    try {
+      config.value = nextValue;
+    } catch {
+      return { ...config, value: nextValue };
+    }
+    return config;
+  }
+
+  function statsigClients() {
+    const root = window.__STATSIG__ || globalThis.__STATSIG__;
+    if (!root || typeof root !== "object") return [];
+    const clients = [root.firstInstance, typeof root.instance === "function" ? root.instance() : null];
+    if (root.instances && typeof root.instances === "object") clients.push(...Object.values(root.instances));
+    return clients.filter((client, index, array) => client && typeof client === "object" && array.indexOf(client) === index);
+  }
+
+  function patchStatsigModelWhitelist() {
+    statsigClients().forEach((client) => {
+      if (client.__codexPlusModelWhitelistPatched || typeof client.getDynamicConfig !== "function") return;
+      const originalGetDynamicConfig = client.getDynamicConfig.bind(client);
+      client.getDynamicConfig = (name, options) => {
+        const result = originalGetDynamicConfig(name, options);
+        return name === "107580212" ? patchStatsigModelDynamicConfig(result) : result;
+      };
+      client.__codexPlusModelWhitelistPatched = true;
+      try {
+        patchStatsigModelDynamicConfig(client.getDynamicConfig("107580212", { disableExposureLog: true }));
+      } catch {
+      }
+    });
+  }
+
+  function patchObjectGraphForModels(root, visited, depth = 0) {
+    if (!root || typeof root !== "object" || visited.has(root) || depth > 5) return false;
+    visited.add(root);
+    let changed = patchModelContainer(root);
+    if (root instanceof Element || root === window || root === document || root === document.body || root === document.documentElement) return changed;
+    for (const key of Object.keys(root)) {
+      if (key === "ownerDocument" || key === "parentElement" || key === "parentNode" || key === "children" || key === "childNodes") continue;
+      let value;
+      try {
+        value = root[key];
+      } catch {
+        continue;
+      }
+      if (value && typeof value === "object" && patchObjectGraphForModels(value, visited, depth + 1)) changed = true;
+    }
+    return changed;
+  }
+
+  function reactFiberKeys(element) {
+    return Object.keys(element).filter((key) => key.startsWith("__reactFiber") || key.startsWith("__reactInternalInstance") || key.startsWith("__reactProps"));
+  }
+
+  function patchReactModelState() {
+    const visited = new WeakSet();
+    const nodes = [document.body, ...document.querySelectorAll("button, [role='menu'], [role='dialog'], [data-radix-popper-content-wrapper]")].filter(Boolean);
+    let changed = false;
+    for (const node of nodes.slice(0, 220)) {
+      for (const key of reactFiberKeys(node)) {
+        if (patchObjectGraphForModels(node[key], visited)) changed = true;
+      }
+    }
+    return changed;
+  }
+
+  function patchAppServerModelMessages() {
+    if (window.__codexPlusModelMessagePatchInstalled) return;
+    window.__codexPlusModelMessagePatchInstalled = true;
+    const originalDispatchEvent = window.dispatchEvent;
+    window.dispatchEvent = function patchedCodexPlusDispatchEvent(event) {
+      try {
+        const detail = event?.detail;
+        const request = detail?.request;
+        if (event?.type === "codex-message-from-view" && detail?.type === "mcp-request" && request?.method === "model/list") {
+          request.params = { ...(request.params || {}), includeHidden: true };
+          if (request.id != null) codexPlusModelListRequestIds.add(String(request.id));
+        }
+        if (event?.type === "message") patchMcpModelResponseData(event.data);
+      } catch (error) {
+        window.__codexPlusModelPatchFailures = window.__codexPlusModelPatchFailures || [];
+        window.__codexPlusModelPatchFailures.push(String(error?.stack || error));
+      }
+      return originalDispatchEvent.call(this, event);
+    };
+
+    window.addEventListener("message", (event) => {
+      try {
+        patchMcpModelResponseData(event?.data);
+      } catch (error) {
+        window.__codexPlusModelPatchFailures = window.__codexPlusModelPatchFailures || [];
+        window.__codexPlusModelPatchFailures.push(String(error?.stack || error));
+      }
+    }, true);
+  }
+
+  function patchMcpModelResponseData(data) {
+    if (data?.type !== "mcp-response") return false;
+    const message = data.message || data.response;
+    const requestId = message.id != null ? String(message.id) : "";
+    if (codexPlusModelListRequestIds.size > 0 && !codexPlusModelListRequestIds.has(requestId)) return false;
+    codexPlusModelListRequestIds.delete(requestId);
+    return patchModelContainer(data) || patchModelContainer(message) || patchModelContainer(message?.result) || patchModelContainer(message?.result?.data);
+  }
+
+  function patchCodexModelWhitelist() {
+    if (!codexPlusModelUnlockEnabled()) return;
+    patchAppServerModelMessages();
+    if (!codexPlusModelNames().length) {
+      loadCodexModelCatalog();
+      return;
+    }
+    patchStatsigModelWhitelist();
+    patchReactModelState();
   }
 
   function downloadMarkdown(filename, markdown) {
@@ -1753,6 +2440,17 @@
     }
   }
 
+  function isThreadMissingResult(result) {
+    const message = String(result?.message || "");
+    return result?.status === "failed" && message.includes("Thread not found in local storage");
+  }
+
+  async function removeOrphanedProjectedRow(row, button, ref) {
+    await setProjectlessThreadIds(ref, "remove").catch(() => {});
+    await clearThreadWorkspaceHints(ref).catch(() => {});
+    removeDeletedRow(row, button, ref);
+  }
+
   function updateDeleteButtonOffsets() {
     sessionRows().forEach((row) => {
       const hasArchiveConfirm = Array.from(row.querySelectorAll("button")).some((button) => {
@@ -1778,6 +2476,9 @@
       if (result.status === "server_deleted" || result.status === "local_deleted") {
         removeDeletedRow(row, button, ref);
         showToast(result.message || "删除成功", result.undo_token);
+      } else if (isThreadMissingResult(result)) {
+        await removeOrphanedProjectedRow(row, button, ref);
+        showToast("已移除本地列表中的失效会话", null);
       } else {
         showToast(result.message || "删除失败", null);
       }
@@ -2206,22 +2907,250 @@
     }
   }
 
+  function truncateTimelineQuestion(text) {
+    const normalized = String(text || "").replace(/\s+/g, " ").trim();
+    const chars = Array.from(normalized);
+    if (chars.length <= timelineQuestionLimit) return normalized;
+    return `${chars.slice(0, timelineQuestionLimit).join("")}…`;
+  }
+
+  function conversationTimelineRoot() {
+    return document.querySelector(".thread-scroll-container") || document.querySelector("main") || document.querySelector('[role="main"]');
+  }
+
+  function timelineQuestionSelector() {
+    return [
+      '[data-message-author-role="user"]',
+      '[data-testid="conversation-turn"][data-message-author-role="user"]',
+      '[data-testid="conversation-turn"] [data-message-author-role="user"]',
+      '[class*="user-message"]',
+      '[class*="UserMessage"]',
+    ].join(", ");
+  }
+
+  function nodeOrAncestorLooksLikeCodexUserBubble(node) {
+    if (node.nodeType !== 1) return false;
+    const className = String(node.className || "");
+    if (className.includes("bg-token-foreground/5") && node.parentElement?.classList?.contains("items-end")) return true;
+    const bubble = node.closest?.("[class*='bg-token-foreground/5']");
+    return !!bubble?.parentElement?.classList?.contains("items-end");
+  }
+
+  function nodeLooksLikeCodexUserBubble(node) {
+    if (nodeOrAncestorLooksLikeCodexUserBubble(node)) return true;
+    return !!node.querySelector?.(".group.flex.w-full.flex-col.items-end.justify-end.gap-1 > [class*='bg-token-foreground/5']");
+  }
+
+  function nodeLooksLikeTimelineQuestion(node) {
+    if (node.nodeType !== 1 || isExtensionUiNode(node)) return false;
+    const questionSelector = timelineQuestionSelector();
+    return !!node.matches?.(questionSelector) || !!node.closest?.(questionSelector) || !!node.querySelector?.(questionSelector) || nodeLooksLikeCodexUserBubble(node);
+  }
+
+  function conversationTimelineQuestionCandidates(root) {
+    const explicitCandidates = Array.from(root.querySelectorAll([
+      '[data-message-author-role="user"]',
+      '[data-testid="conversation-turn"][data-message-author-role="user"]',
+      '[data-testid="conversation-turn"] [data-message-author-role="user"]',
+      '[class*="user-message"]',
+      '[class*="UserMessage"]',
+    ].join(", ")));
+    const codexUserBubbles = Array.from(root.querySelectorAll(".group.flex.w-full.flex-col.items-end.justify-end.gap-1")).flatMap((group) => {
+      return Array.from(group.children).filter((child) => String(child.className || "").includes("bg-token-foreground/5"));
+    });
+    return [...explicitCandidates, ...codexUserBubbles];
+  }
+
+  function extractTimelineQuestionText(node) {
+    const clone = node.cloneNode(true);
+    clone.querySelectorAll("button, svg, [aria-hidden='true'], .sr-only").forEach((child) => child.remove());
+    return clone.textContent.replace(/\s+/g, " ").trim();
+  }
+
+  function timelineNodeId(node) {
+    if (!node.__codexConversationTimelineNodeId) {
+      window.__codexConversationTimelineNodeCounter += 1;
+      node.__codexConversationTimelineNodeId = String(window.__codexConversationTimelineNodeCounter);
+    }
+    return node.__codexConversationTimelineNodeId;
+  }
+
+  function visibleTimelineNode(node) {
+    if (!node.isConnected) return false;
+    const style = getComputedStyle(node);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 || rect.height > 0 || !!node.textContent?.trim();
+  }
+
+  function conversationTimelineQuestions() {
+    const root = conversationTimelineRoot();
+    if (!root?.matches?.('.thread-scroll-container, main, [role="main"]')) return [];
+    const seen = new Set();
+    return conversationTimelineQuestionCandidates(root).flatMap((node) => {
+      if (node.closest('[data-app-action-sidebar-thread-id]')) return [];
+      if (isExtensionUiNode(node)) return [];
+      const target = node.closest('[data-testid="conversation-turn"]') || node;
+      if (seen.has(target)) return [];
+      seen.add(target);
+      if (!visibleTimelineNode(target)) return [];
+      const text = extractTimelineQuestionText(node);
+      if (!text) return [];
+      return [{ node: target, text, nodeId: timelineNodeId(target) }];
+    });
+  }
+
+  function timelineScrollerViewportTop(scroller) {
+    if (scroller === document.scrollingElement || scroller === document.documentElement || scroller === document.body) return 0;
+    return scroller.getBoundingClientRect().top;
+  }
+
+  function timelineScrollableHeight(scroller) {
+    return Math.max(1, scroller.scrollHeight - scroller.clientHeight);
+  }
+
+  function timelineRawMarkerTop(question, scroller) {
+    const scrollOffset = scroller.scrollTop + question.node.getBoundingClientRect().top - timelineScrollerViewportTop(scroller);
+    const percent = (scrollOffset / timelineScrollableHeight(scroller)) * 100;
+    return Math.max(timelineMinTopPercent, Math.min(timelineMaxTopPercent, percent));
+  }
+
+  function timelineMarkerTops(questions, scroller) {
+    if (questions.length <= 1) return [50];
+    const minGap = Math.min(timelineMaxMarkerGapPercent, (timelineMaxTopPercent - timelineMinTopPercent) / Math.max(questions.length - 1, 1));
+    const tops = questions.map((question) => timelineRawMarkerTop(question, scroller));
+    for (let index = 1; index < tops.length; index += 1) {
+      tops[index] = Math.max(tops[index], tops[index - 1] + minGap);
+    }
+    for (let index = tops.length - 1; index >= 0; index -= 1) {
+      const maxForIndex = timelineMaxTopPercent - ((tops.length - 1 - index) * minGap);
+      tops[index] = Math.min(tops[index], maxForIndex);
+    }
+    return tops.map((top) => Math.max(timelineMinTopPercent, Math.min(timelineMaxTopPercent, top)));
+  }
+
+  function removeConversationTimeline() {
+    document.querySelectorAll(`.${timelineClass}`).forEach((node) => node.remove());
+  }
+
+  function nearestTimelineScroller(node) {
+    for (let current = node?.parentElement; current; current = current.parentElement) {
+      const style = getComputedStyle(current);
+      if (/(auto|scroll)/.test(style.overflowY) && current.scrollHeight > current.clientHeight) return current;
+    }
+    return document.querySelector(".thread-scroll-container") || document.scrollingElement || document.documentElement;
+  }
+
+  function scrollTimelineTarget(node) {
+    const scroller = nearestTimelineScroller(node);
+    const nodeRect = node.getBoundingClientRect();
+    const nextTop = scroller.scrollTop + nodeRect.top - timelineScrollerViewportTop(scroller) - (scroller.clientHeight / 2) + (nodeRect.height / 2);
+    scroller.scrollTo({ top: nextTop, behavior: "smooth" });
+  }
+
+  function highlightTimelineTarget(node) {
+    node.classList.remove(timelineTargetClass);
+    void node.offsetWidth;
+    node.classList.add(timelineTargetClass);
+    clearTimeout(node.__codexConversationTimelineHighlightTimer);
+    node.__codexConversationTimelineHighlightTimer = setTimeout(() => {
+      node.classList.remove(timelineTargetClass);
+    }, 1300);
+  }
+
+  function createConversationTimelineMarker(question) {
+    const marker = document.createElement("button");
+    marker.type = "button";
+    marker.className = timelineMarkerClass;
+    marker.style.top = `${question.markerTop}%`;
+    marker.setAttribute("aria-label", `跳转到：${truncateTimelineQuestion(question.text)}`);
+    const tooltip = document.createElement("span");
+    tooltip.className = timelineTooltipClass;
+    tooltip.id = `codex-conversation-timeline-tooltip-${question.nodeId}`;
+    tooltip.setAttribute("role", "tooltip");
+    tooltip.textContent = truncateTimelineQuestion(question.text);
+    marker.setAttribute("aria-describedby", tooltip.id);
+    marker.appendChild(tooltip);
+    const activateMarker = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+      document.querySelectorAll(`.${timelineMarkerClass}.codex-conversation-timeline-marker-active`).forEach((node) => {
+        node.classList.remove("codex-conversation-timeline-marker-active");
+      });
+      marker.classList.add("codex-conversation-timeline-marker-active");
+      scrollTimelineTarget(question.node);
+      highlightTimelineTarget(question.node);
+    };
+    marker.addEventListener("pointerup", activateMarker, true);
+    marker.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") activateMarker(event);
+    }, true);
+    return marker;
+  }
+
+  function prepareTimelineQuestions(questions) {
+    if (questions.length === 0) return [];
+    const scroller = nearestTimelineScroller(questions[0].node);
+    const tops = timelineMarkerTops(questions, scroller);
+    return questions.map((question, index) => ({ ...question, markerTop: Number(tops[index].toFixed(3)) }));
+  }
+
+  function timelineSignature(questions) {
+    return questions.map((question) => `${question.nodeId}:${Math.round(question.markerTop * 10)}:${truncateTimelineQuestion(question.text)}`).join("|");
+  }
+
+  function refreshConversationTimeline() {
+    if (!codexPlusSettings().conversationTimeline) {
+      removeConversationTimeline();
+      return;
+    }
+    const questions = prepareTimelineQuestions(conversationTimelineQuestions());
+    if (questions.length === 0) {
+      removeConversationTimeline();
+      return;
+    }
+    const signature = timelineSignature(questions);
+    const existing = document.querySelector(`.${timelineClass}`);
+    if (
+      existing?.dataset.codexConversationTimelineVersion === codexConversationTimelineVersion &&
+      existing?.dataset.codexConversationTimelineSignature === signature
+    ) {
+      return;
+    }
+    removeConversationTimeline();
+    const container = document.createElement("div");
+    container.className = timelineClass;
+    container.dataset.codexConversationTimelineVersion = codexConversationTimelineVersion;
+    container.dataset.codexConversationTimelineSignature = signature;
+    const track = document.createElement("div");
+    track.className = timelineTrackClass;
+    container.appendChild(track);
+    questions.forEach((question) => {
+      container.appendChild(createConversationTimelineMarker(question));
+    });
+    document.body.appendChild(container);
+  }
+
   function scanLightweight() {
     installStyle();
     installCodexPlusMenu();
     scheduleBackendHeartbeat();
+    patchCodexModelWhitelist();
     installDeleteButtonEventDelegation();
   }
 
   function scanDeferred() {
     enablePluginEntry();
     unblockPluginInstallButtons();
+    patchCodexModelWhitelist();
     sessionRows().forEach(tryAttachButton);
     updateDeleteButtonOffsets();
     scheduleProjectMoveProjection();
     scheduleChatsSortCorrection();
     archivedPageRows().forEach(attachArchivedPageDeleteButton);
     installArchivedDeleteAllButton();
+    refreshConversationTimeline();
   }
 
   function runScanStep(step) {
@@ -2239,7 +3168,7 @@
   }
 
   function isExtensionUiNode(node) {
-    return !!node?.closest?.(`.codex-delete-toast, .codex-delete-confirm-overlay, .codex-plus-modal-overlay, .${projectMoveOverlayClass}, #codex-plus-menu`);
+    return !!node?.closest?.(`.codex-delete-toast, .codex-delete-confirm-overlay, .codex-plus-modal-overlay, .${projectMoveOverlayClass}, .${timelineClass}, .codex-conversation-timeline, #codex-plus-menu`);
   }
 
   const scanRelevantSelector = [
@@ -2249,23 +3178,38 @@
     '[data-codex-project-move-row="true"]',
     '[data-codex-archive-page-row="true"]',
     "[data-codex-archive-delete-all]",
+    '[data-message-author-role]',
+    '[data-testid="conversation-turn"]',
+    '[class*="user-message"]',
+    '[class*="UserMessage"]',
     selectors.appHeader,
+    "header",
     selectors.archiveNav,
     selectors.disabledInstallButton,
   ].join(", ");
 
+  function nodeSelfOrAncestorMatchesScanRelevance(node) {
+    if (node.nodeType !== 1) return false;
+    if (isExtensionUiNode(node)) return false;
+    const questionSelector = timelineQuestionSelector();
+    return !!node.matches?.(scanRelevantSelector) ||
+      !!node.closest?.(scanRelevantSelector) ||
+      !!node.matches?.(questionSelector) ||
+      !!node.closest?.(questionSelector) ||
+      nodeOrAncestorLooksLikeCodexUserBubble(node);
+  }
+
   function isScanRelevantNode(node) {
     if (node.nodeType !== 1) return false;
     if (isExtensionUiNode(node)) return false;
-    return !!node.matches?.(scanRelevantSelector) || !!node.closest?.(scanRelevantSelector) || !!node.querySelector?.(scanRelevantSelector);
+    return nodeSelfOrAncestorMatchesScanRelevance(node) || !!node.querySelector?.(scanRelevantSelector) || nodeLooksLikeTimelineQuestion(node);
   }
 
   function isChatContentMutation(mutation) {
     const target = mutation.target;
-    if (target?.closest?.('[data-message-author-role], [data-testid="conversation-turn"], main .prose')) {
-      return !Array.from(mutation.addedNodes).some(isScanRelevantNode) && !Array.from(mutation.removedNodes).some(isScanRelevantNode);
-    }
-    return false;
+    if (!target?.closest?.('[data-message-author-role], [data-testid="conversation-turn"], main .prose')) return false;
+    return !Array.from(mutation.addedNodes).some((node) => node.nodeType === 1 && isScanRelevantNode(node)) &&
+      !Array.from(mutation.removedNodes).some((node) => node.nodeType === 1 && isScanRelevantNode(node));
   }
 
   function shouldScheduleScan(mutations) {
@@ -2274,7 +3218,9 @@
       if (isChatContentMutation(mutation)) return false;
       const target = mutation.target;
       if (isExtensionUiNode(target)) return false;
-      return Array.from(mutation.addedNodes).some((node) => node.nodeType === 1 && !isExtensionUiNode(node)) || Array.from(mutation.removedNodes).some((node) => node.nodeType === 1);
+      if (target?.nodeType === 1 && nodeSelfOrAncestorMatchesScanRelevance(target)) return true;
+      const changedNodes = [...Array.from(mutation.addedNodes), ...Array.from(mutation.removedNodes)];
+      return changedNodes.some((node) => node.nodeType === 1 && isScanRelevantNode(node));
     });
   }
 
@@ -2297,6 +3243,16 @@
   window.__codexProjectMoveReadProjection = readProjectMoveProjection;
   window.__codexProjectMoveTargets = projectMoveTargets;
   window.__codexProjectMoveSortChats = applyChatsSortCorrection;
+  window.removeEventListener("resize", window.__codexPlusResizeHandler);
+  let codexPlusResizeRafId = 0;
+  window.__codexPlusResizeHandler = () => {
+    cancelAnimationFrame(codexPlusResizeRafId);
+    codexPlusResizeRafId = requestAnimationFrame(() => {
+      updateFloatingCodexPlusMenuPosition(document.getElementById(codexPlusMenuId));
+      runScanStep(refreshConversationTimeline);
+    });
+  };
+  window.addEventListener("resize", window.__codexPlusResizeHandler);
   window.__codexSessionDeleteObserver?.disconnect();
   window.__codexSessionDeleteObserver = new MutationObserver(scheduleScan);
   window.__codexSessionDeleteObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
